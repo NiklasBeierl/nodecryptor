@@ -95,14 +95,12 @@ ip rule add fwmark 0xe00 lookup main priority 0
 # Add a routing table (id 100) that sends everything through the wg interface
 ip route add default dev cilium_wg0 scope link table 100
 
-# On Control-plane nodes: Force bootstrap traffic through the main table:
-# Reply traffic from exempted ports, the "more correct" solution here would be to 
-# match the src address against the Nodes InternalIP rather than iif lo
+# On control-plane nodes: Force bootstrap reply traffic through the main table
 ip rule add iif lo sport 2379-2380 lookup main priority 200
 ip rule add iif lo sport 6443 lookup main priority 200
 
 # For every $CONTROL_PLANE_NODE
-# Ensure that exempted ports remain unencrypted
+# Ensure that exempted destinations remain unencrypted
 ip rule add to $CONTROL_PLANE_NODE dport 2379-2380  lookup main priority 200
 ip rule add to $CONTROL_PLANE_NODE dport 6443 lookup main priority 200
 # Now send the rest of traffic to the table that puts everything to the wg interface
@@ -115,13 +113,32 @@ ip rule add to $WORKER_NODE lookup 100 priority 201
 
 ## The bootstrap problem
 
-## Limitations of the PoC / Further Ideas
+The bootstrap problem for ciliums wireguard encryption arises when a node reboots, or
+more specifically: When its `cilium_wg0` interface is taken down. When the cilium
+agent sets up the interface, it configures the private key and communicates the public
+key to other nodes via the `CiliumNode` resource. Crucially, the private key is not
+persisted anywhere. This creates can create the following situation:
 
-It matches reply traffic from exempted ports using `iif lo`, matching for the
-InternalIPs and ExternalIPs would be better.
+1) A node joins the cluster
+2) It creates the interface, configures the keypair and publishes the public key
+3) If Node-To-Node encryption is enabled, all other nodes start encrypting traffic
+   headed for the new node
+4) When the node reboots, the private key is lost
+5) Now when the node tries to reconnect to the control-plane, reply-packets are
+   encrypted, but it can't decrypt them.
+
+To avoid this problem, cilium exempts control-plane nodes from node-to-node encryption.
+
+## Limitations of the PoC / further ideas
+
+It only matches exempted traffic based on ports, in principle, other traffic
+matching rules might also be interesting.
+
+It matches exempted reply traffic from using `iif lo`, matching for the local
+InternalIPs and ExternalIPs as source ips would be better.
 
 It only distinguishes two types of nodes: control-plane and workers. A more general
-mechanism would be a custom resource that specifies exempted ports (or other traffic
-matchers) and label-selectors to support arbitrary exemptions on arbitrary subsets
-of nodes.
+mechanism would be a custom resource that specifies exempted traffic and
+node label-selectors to support arbitrary exemptions on arbitrary nodes.
 
+This is my first go project, it might contain weird code. :3
