@@ -37,7 +37,7 @@ func main() {
 	var metricsServerBindAddress string
 	var noopRoute string
 	flag.StringVar(&nodeName, "node-name", "", "Name of the node (falls back to NODE_NAME env var)")
-	flag.StringVar(&controlPlaneExemptPorts, "control-plane-exempt-ports", "", "Comma-separated list of ports/ranges to exempt from encryption for control-plane nodes (e.g., 2379-2382,6443,443)")
+	flag.StringVar(&controlPlaneExemptPorts, "control-plane-exempt-ports", "2379-2380,6443", "Comma-separated list of ports/ranges to exempt from encryption for control-plane nodes")
 	flag.StringVar(&healthProbeBindAddress, "health-probe-bind-address", ":8083", "Health probe bind address")
 	flag.StringVar(&metricsServerBindAddress, "metrics-server-bind-address", ":8084", "Metrics server bind address")
 	flag.StringVar(&noopRoute, "noop-route", "", "Add a noop route to the specified destination")
@@ -54,17 +54,13 @@ func main() {
 	// Parse exempt port ranges
 	opts := reconciler.DefaultOptions()
 	var err error
-	if controlPlaneExemptPorts != "" {
-		opts.ControlPlaneExemptPorts, err = reconciler.ParsePortRanges(controlPlaneExemptPorts)
-		if err != nil {
-			setupLog.Error(err, "invalid control-plane-exempt-ports")
-			os.Exit(1)
-		}
+	opts.ControlPlaneExemptPorts, err = reconciler.ParsePortRanges(controlPlaneExemptPorts)
+	if err != nil {
+		setupLog.Error(err, "invalid control-plane-exempt-ports")
+		os.Exit(1)
 	}
 
-	if noopRoute != "" {
-		opts.NoopRouteTarget = noopRoute
-	}
+	opts.NoopRouteTarget = noopRoute
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,

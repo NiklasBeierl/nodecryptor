@@ -33,12 +33,8 @@ type Options struct {
 // DefaultOptions returns sensible defaults
 func DefaultOptions() Options {
 	return Options{
-		Interval:    1 * time.Second,
-		MaxInterval: 30 * time.Second,
-		ControlPlaneExemptPorts: []netlink.RulePortRange{
-			{Start: 2379, End: 2380},
-			{Start: 6443, End: 6443},
-		},
+		Interval:        1 * time.Second,
+		MaxInterval:     30 * time.Second,
 		NoopRouteTarget: "",
 	}
 }
