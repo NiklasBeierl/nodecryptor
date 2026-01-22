@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nodecryptor
+  namespace: kube-system
+  labels:
+    app: nodecryptor
+spec:
+  selector:
+    matchLabels:
+      app: nodecryptor
+  template:
+    metadata:
+      labels:
+        app: nodecryptor
+    spec:
+      serviceAccountName: nodecryptor
+      hostNetwork: true
+      containers:
+        - name: nodecryptor
+          image: ghcr.io/niklasbeierl/nodecryptor:latest
+          imagePullPolicy: Always
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          args:
+            - --noop-route
+            - 10.0.0.255/32

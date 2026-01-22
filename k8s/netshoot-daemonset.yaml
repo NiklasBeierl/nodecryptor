@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nettest
+  namespace: kube-system
+spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 100%
+  selector:
+    matchLabels:
+      app: nettest
+  template:
+    metadata:
+      labels:
+        app: nettest
+    spec:
+      containers:
+      - name: nettest
+        image: nicolaka/netshoot
+        command: ["sleep", "infinity"]
+        securityContext:
+          capabilities:
+            add:
+            - NET_RAW
