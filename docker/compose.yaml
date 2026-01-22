@@ -1,0 +1,44 @@
+services:
+  nodecryptor: &base
+    image: ghcr.io/niklasbeierl/nodecryptor:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ${HOME}/.kube/config:/root/.kube/config:ro
+    command:
+      - --node-name
+      - ${NODE_NAME?error}
+
+  dev: &dev
+    <<: *base
+    container_name: nodecryptor-dev
+    image: ghcr.io/niklasbeierl/nodecryptor:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: builder
+    ports:
+      - 127.0.0.1:40000:40000
+    profiles:
+      - donostart
+    command:
+      - --node-name
+      - ${NODE_NAME?error}
+      - --noop-route
+      - 10.10.10.255/32
+
+  setup-link:
+    <<: *dev
+    network_mode: container:nodecryptor-dev
+    cap_add:
+      - NET_ADMIN
+    entrypoint:
+      - /bin/bash
+    command:
+      - -c
+      - ip link add dev cilium_wg0 type wireguard && ip link set cilium_wg0 up
+    profiles:
+      - donotstart
