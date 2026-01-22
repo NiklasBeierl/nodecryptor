@@ -36,11 +36,6 @@ const (
 	encryptPrio       = exemptPrio + 1
 )
 
-var exemptPorts = []netlink.RulePortRange{
-	{Start: 2379, End: 2380},
-	{Start: 6443, End: 6443},
-}
-
 // Reconciler runs the async reconciliation loop
 type Reconciler struct {
 	state              state.State
@@ -158,7 +153,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 				dstNet := parseIPv4OrCIDR(addr)
 				if dstNet != nil {
 					encryptIPs[addr] = dstNet
-					if nodeType == NodeTypeWorker {
+					if nodeType == NodeTypeControlPlane {
 						exemptIPs[addr] = dstNet
 					}
 				}
@@ -205,7 +200,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	for dst := range sets.KeySet(exemptIPs).Difference(r.readyExempts) {
 		dstNet := exemptIPs[dst]
 		err = nil
-		for _, rule := range buildExemptRules(dstNet) {
+		for _, rule := range r.buildExemptRules(dstNet) {
 			if err = r.ensureRule(rule); err != nil {
 				break
 			}
@@ -234,7 +229,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	for obsoleteDst := range r.readyExempts.Difference(sets.KeySet(exemptIPs)) {
 		dstNet := parseIPv4OrCIDR(obsoleteDst)
 		err = nil
-		for _, rule := range buildExemptRules(dstNet) {
+		for _, rule := range r.buildExemptRules(dstNet) {
 			if err = r.ensureRuleRemoved(rule); err != nil {
 				break
 			}
@@ -305,9 +300,9 @@ func buildEncryptionRule(dst *net.IPNet) *netlink.Rule {
 	return buildRule(dst, false)
 }
 
-func buildExemptRules(dst *net.IPNet) []*netlink.Rule {
+func (r Reconciler) buildExemptRules(dst *net.IPNet) []*netlink.Rule {
 	rules := make([]*netlink.Rule, 0)
-	for _, portRange := range exemptPorts {
+	for _, portRange := range r.options.ControlPlaneExemptPorts {
 		rule := buildRule(dst, true)
 		rule.Dport = &portRange
 		rules = append(rules, rule)
