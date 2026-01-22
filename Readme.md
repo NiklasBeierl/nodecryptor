@@ -105,10 +105,12 @@ ip rule add to $CONTROL_PLANE_NODE dport 2379-2380  lookup main priority 200
 ip rule add to $CONTROL_PLANE_NODE dport 6443 lookup main priority 200
 # Now send the rest of traffic to the table that puts everything to the wg interface
 ip rule add to $CONTROL_PLANE_NODE lookup 100 priority 201
+ip rule add to $POD_CIDR_OF_CONTROL_PLANE_NODE lookup 100 priority 201
 
 # For every $WORKER_NODE
 # Regular nodes don't need exemptions
 ip rule add to $WORKER_NODE lookup 100 priority 201
+ip rule add to $POD_CIDR_OF_WORKER_NODE lookup 100 prior
 ```
 
 ## The bootstrap problem
@@ -130,6 +132,20 @@ persisted anywhere. This can create the following situation:
 To avoid this problem, cilium exempts control-plane nodes from node-to-node encryption.
 
 ## Usage
+> [!WARNING]
+> Again, this is experimental software!
+
+Your cilium chart config needs to contain the following:
+```yaml
+routingMode: native
+ipv4NativeRoutingCIDR: "Your.Entire.Cluster.CIDR/Mask"
+encryption:
+  enabled: true
+  type: wireguard
+```
+
+You can use the kubernetes manifests in [./k8s](./k8s) as reference for deployment. The
+`netshoot-daemonset` is just for troubleshooting / debugging.
 
 ```
 Usage of ./nodeCryptor:
@@ -146,9 +162,6 @@ Usage of ./nodeCryptor:
   -noop-route string
     	Add a noop route to the specified destination
 ```
-
-You can use the kubernetes manifests in [./k8s](./k8s) as reference. The
-`netshot-daemonset` is just for troubleshooting. Please note the below:
 
 ## Why the noop route?
 
@@ -176,6 +189,8 @@ InternalIPs and ExternalIPs as source ips would be better.
 It only distinguishes two types of nodes: control-plane and workers. A more general
 mechanism would be a custom resource that specifies exempted traffic and
 node label-selectors to support arbitrary exemptions on arbitrary nodes.
+
+Might not cover all edge-cases w.r.t IPAM. 
 
 No IPv6.
 
