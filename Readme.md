@@ -1,6 +1,7 @@
 # nodecryptor: better wireguard for cilium
 
-> [!WARNING] > This is experimental / works-for-the-author-grade software!  
+> [!WARNING] 
+> This is experimental / works-for-the-author-grade software!  
 > Tested with cilium 1.18.2
 
 ## Motivation
