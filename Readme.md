@@ -18,7 +18,7 @@ has two important limitations:
 
 2) Traffic between root network-namespaces of nodes can be encrypted (Node-to-Node
    encryption, considered beta) but it creates a bootstrapping-problem, which cilium
-   solves by excluding control-plane nodes from Node-to-Node encryption. 
+   solves by excluding control-plane nodes from Node-to-Node encryption.
    (See "The bootsrapping problem" below)
 
 ### Why these are relevant limitations:
@@ -34,8 +34,8 @@ communicate using the root network namespace. While arguably all workloads shoul
 encrypted end-to-end and considering the cluster network trusted is perhaps a bit
 foolish, it would be even more foolish to assume every organization has the
 capabilities to implement encryption on all services. Especially in multi-cloud
-clusters, overlooking these limitations of node-to-node encryption may entail 
-transmitting credentials or other sensitive information in the clear. Setups without 
+clusters, overlooking these limitations of node-to-node encryption may entail
+transmitting credentials or other sensitive information in the clear. Setups without
 dedicated control-plane nodes are especially susceptible to such "accidents".
 
 ## Approach
@@ -51,24 +51,24 @@ main routing table and thus likely the default interface, unencrypted. This issu
 rather easy to fix, especially since cilium already configures all relevant ips
 as allowed ips on the peers of the `cilium_wg0` interface. We merely need to route
 traffic between pods and remote nodes (and vice versa) through that interface. The
-fact that cilium doesn't already do that in the above described configuration may 
+fact that cilium doesn't already do that in the above described configuration may
 arguably be considered a bug.
 
 The second issue, allowing node-to-node encryption on control-plane nodes is a bit
-more tricky, since we need to solve the bootstrapping-problem. If you are not familiar 
+more tricky, since we need to solve the bootstrapping-problem. If you are not familiar
 with this bootstrapping problem, I recommend going to the description below and
 returning here.
 
 The way this PoC solves - or rather avoids - this bootstrapping problem is that it
 exempts only the traffic necessary for bootstraping from encryption, rather
-than the entire control-plane node. The key circumstance that allows us to do this is 
-that the kubernetes-api and etcd connections between control-plane nodes are usually 
-already encrypted! 
+than the entire control-plane node. The key circumstance that allows us to do this is
+that the kubernetes-api and etcd connections between control-plane nodes are usually
+already encrypted!
 
 Let's walk through how a control-plane node can connect to the wireguard network
 even if the other nodes have an outdated public key set for it:
 
-0) The node went offline, inbound traffic from other nodes destined  is encrypted 
+0) The node went offline, inbound traffic from other nodes destined is encrypted
    with the old key, while this traffic will never be decrypted, it at least remains
    encrypted.
 1) The node boots and connects to the kubernetes api and etcd (exempted from encryption)
@@ -128,6 +128,42 @@ persisted anywhere. This can create the following situation:
 
 To avoid this problem, cilium exempts control-plane nodes from node-to-node encryption.
 
+## Usage
+
+```
+Usage of ./nodeCryptor:
+  -control-plane-exempt-ports string
+    	Comma-separated list of ports/ranges to exempt from encryption for control-plane nodes (default "2379-2380,6443")
+  -health-probe-bind-address string
+    	Health probe bind address (default ":8083")
+  -kubeconfig string
+    	Paths to a kubeconfig. Only required if out-of-cluster.
+  -metrics-server-bind-address string
+    	Metrics server bind address (default ":8084")
+  -node-name string
+    	Name of the node (falls back to NODE_NAME env var)
+  -noop-route string
+    	Add a noop route to the specified destination
+```
+
+You can use the kubernetes manifests in [./k8s](./k8s) as reference. The
+`netshot-daemonset` is just for troubleshooting. Please note the below:
+
+## Why the noop route?
+
+In all my testing I have observed that cluster traffic will not be affected by ip rules
+if there isn't at least one non-default route in the main table. I suspect that cilium
+will use the faster `bpf_rediret` if there is no "interesting" routing information,
+but fails to consider ip rules for that. If specified, it will essentially perform:
+
+```sh
+ip link add noop type dummy
+ip link set noop up
+ip route add $YOUR_NOOP_TARGET dev noop
+```
+
+You should specify some private ipv4 that doesn't overlap with your cluster network.
+
 ## Limitations of the PoC / further ideas
 
 It only matches exempted traffic based on ports, in principle, other traffic
@@ -140,4 +176,12 @@ It only distinguishes two types of nodes: control-plane and workers. A more gene
 mechanism would be a custom resource that specifies exempted traffic and
 node label-selectors to support arbitrary exemptions on arbitrary nodes.
 
+No IPv6.
+
 This is my first go project, it might contain weird code. :3
+
+# AI Disclaimer
+
+This is my first go project, I used claude code for some tasks to help me write
+idiomatic code. I double-checked generated code and ended up simplifying / rewriting
+almost all of it. The core logic of the reconciler I wrote from scratch.
