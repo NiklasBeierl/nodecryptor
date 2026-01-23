@@ -93,22 +93,24 @@ ip rule add fwmark 0xe00 lookup main priority 0
 # Add a routing table (id 100) that sends everything through the wg interface
 ip route add default dev cilium_wg0 scope link table 100
 
-# On control-plane nodes: Force bootstrap reply traffic through the main table
-ip rule add iif lo sport 2379-2380 lookup main priority 200
-ip rule add iif lo sport 6443 lookup main priority 200
+# On all nodes:
+# For every remote $POD_CIDR, send the traffic to the wg interface
+ip rule add to $POD_CIDR lookup 100 priority 200
 
-# For every $CONTROL_PLANE_NODE
+# On control-plane nodes: Force exempted reply traffic through the main table
+ip rule add iif lo sport 2379-2380 lookup main priority 210
+ip rule add iif lo sport 6443      lookup main priority 210
+
+# For every remote $CONTROL_PLANE_NODE
 # Ensure that exempted destinations remain unencrypted
-ip rule add to $CONTROL_PLANE_NODE dport 2379-2380  lookup main priority 200
-ip rule add to $CONTROL_PLANE_NODE dport 6443 lookup main priority 200
-# Now send the rest of traffic to the table that puts everything to the wg interface
-ip rule add to $CONTROL_PLANE_NODE lookup 100 priority 201
-ip rule add to $POD_CIDR_OF_CONTROL_PLANE_NODE lookup 100 priority 201
+ip rule add to $CONTROL_PLANE_NODE dport 2379-2380 lookup main priority 210
+ip rule add to $CONTROL_PLANE_NODE dport 6443      lookup main priority 210
+# Now force the remaining traffic to these nodes to be encrypted 
+ip rule add to $CONTROL_PLANE_NODE                 lookup 100 priority 220
 
-# For every $WORKER_NODE
-# Regular nodes don't need exemptions
-ip rule add to $WORKER_NODE lookup 100 priority 201
-ip rule add to $POD_CIDR_OF_WORKER_NODE lookup 100 prior
+# For every remote $WORKER_NODE
+# Essentially the same, but there are no exemptions
+ip rule add to $WORKER_NODE lookup 100 priority 220
 ```
 
 ## The bootstrap problem
