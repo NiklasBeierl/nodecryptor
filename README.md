@@ -1,6 +1,6 @@
 # nodecryptor: better wireguard for cilium
 
-> [!WARNING] 
+> [!WARNING]
 > This is experimental / works-for-the-author-grade software!  
 > Tested with cilium 1.18.2
 
@@ -51,9 +51,7 @@ node-to-node traffic will be treated like north-south traffic and simply go thro
 main routing table and thus likely the default interface, unencrypted. This issue is
 rather easy to fix, especially since cilium already configures all relevant ips
 as allowed ips on the peers of the `cilium_wg0` interface. We merely need to route
-traffic between pods and remote nodes (and vice versa) through that interface. The
-fact that cilium doesn't already do that in the above described configuration may
-arguably be considered a bug.
+traffic between pods and remote nodes (and vice versa) through that interface.
 
 The second issue, allowing node-to-node encryption on control-plane nodes is a bit
 more tricky, since we need to solve the bootstrapping-problem. If you are not familiar
@@ -132,16 +130,20 @@ persisted anywhere. This can create the following situation:
 To avoid this problem, cilium exempts control-plane nodes from node-to-node encryption.
 
 ## Usage
+
 > [!WARNING]
 > Again, this is experimental software!
 
 Your cilium chart config needs to contain the following:
+
 ```yaml
 routingMode: native
 ipv4NativeRoutingCIDR: "Your.Entire.Cluster.CIDR/Mask"
 encryption:
   enabled: true
   type: wireguard
+  # Done by nodeCryptor instead
+  nodeEncryption: false
 ```
 
 You can use the kubernetes manifests in [./k8s](./k8s) as reference for deployment. The
@@ -190,7 +192,7 @@ It only distinguishes two types of nodes: control-plane and workers. A more gene
 mechanism would be a custom resource that specifies exempted traffic and
 node label-selectors to support arbitrary exemptions on arbitrary nodes.
 
-Might not cover all edge-cases w.r.t IPAM. 
+Might not cover all edge-cases w.r.t IPAM.
 
 No IPv6.
 
