@@ -31,9 +31,13 @@ func (t NodeType) String() string {
 }
 
 const (
-	forceEncryptTable = 100
-	exemptPrio        = 200
-	encryptPrio       = exemptPrio + 1
+	forceEncryptTableId = 100
+	// Always encrypt remote pod traffic
+	remotePodPrio = 200
+	// Don't encrypt exempted ports
+	exemptPrio = remotePodPrio + 10
+	// Encrypt everything else to remote nodes
+	encryptPrio = exemptPrio + 10
 )
 
 // Reconciler runs the async reconciliation loop
@@ -110,6 +114,11 @@ func (r *Reconciler) debounceAndReconcile(ctx context.Context, ticker *time.Tick
 	}
 }
 
+type netWithPrio struct {
+	net  net.IPNet
+	prio int
+}
+
 func (r *Reconciler) reconcile(ctx context.Context) {
 	start := time.Now()
 
@@ -118,7 +127,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	r.state.Lock()
 	defer r.state.Unlock()
 
-	encryptIPs := make(map[string]*net.IPNet)
+	encryptIPs := make(map[string]*netWithPrio)
 	exemptIPs := make(map[string]*net.IPNet)
 	needSetup := false
 	var nodeType NodeType
@@ -144,7 +153,10 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		for _, cidr := range node.Spec.IPAM.PodCIDRs {
 			dst := parseIPv4OrCIDR(cidr)
 			if dst != nil {
-				encryptIPs[cidr] = dst
+				encryptIPs[cidr] = &netWithPrio{
+					net:  *dst,
+					prio: remotePodPrio,
+				}
 			}
 		}
 		for _, addrspec := range node.Spec.Addresses {
@@ -152,7 +164,10 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 				addr := addrspec.IP
 				dstNet := parseIPv4OrCIDR(addr)
 				if dstNet != nil {
-					encryptIPs[addr] = dstNet
+					encryptIPs[addr] = &netWithPrio{
+						net:  *dstNet,
+						prio: encryptPrio,
+					}
 					if nodeType == NodeTypeControlPlane {
 						exemptIPs[addr] = dstNet
 					}
@@ -211,9 +226,11 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 
 	}
 	for dst := range sets.KeySet(encryptIPs).Difference(r.readyRoutes) {
-		dstNet := encryptIPs[dst]
+		ruleData := encryptIPs[dst]
 		err = nil
-		if err = r.ensureRule(buildEncryptionRule(dstNet)); err == nil {
+		rule := buildEncryptionRule(&ruleData.net)
+		rule.Priority = ruleData.prio
+		if err = r.ensureRule(rule); err == nil {
 			r.readyRoutes.Insert(dst)
 		}
 	}
@@ -288,10 +305,8 @@ func buildRule(dst *net.IPNet, exempt bool) *netlink.Rule {
 	rule.Dst = dst
 	if exempt {
 		rule.Table = unix.RT_TABLE_MAIN
-		rule.Priority = exemptPrio
 	} else {
-		rule.Table = forceEncryptTable
-		rule.Priority = encryptPrio
+		rule.Table = forceEncryptTableId
 	}
 	return rule
 }
@@ -304,6 +319,7 @@ func (r Reconciler) buildExemptRules(dst *net.IPNet) []*netlink.Rule {
 	rules := make([]*netlink.Rule, 0)
 	for _, portRange := range r.options.ControlPlaneExemptPorts {
 		rule := buildRule(dst, true)
+		rule.Priority = exemptPrio
 		rule.Dport = &portRange
 		rules = append(rules, rule)
 	}
@@ -357,7 +373,7 @@ func (r *Reconciler) setup() {
 			IP:   net.ParseIP("0.0.0.0"),
 			Mask: net.CIDRMask(0, 32),
 		},
-		Table: forceEncryptTable,
+		Table: forceEncryptTableId,
 	}
 
 	err := netlink.RouteAdd(route)
